@@ -1,15 +1,15 @@
 process GEN_MHP_SAMPLE_SHEET {
-    tag "Generate MHP samplesheet: $reference"
+    tag "Generate MHP samplesheet: $reference chunk $chunk_index"
     label 'process_xsmall'
     container 'docker.io/nfcore/base:2.1'
 
-    publishDir "${params.outdir}/${params.project}/mhp", mode: 'copy', pattern: '*_mhp_samplesheet.tsv', saveAs: { filename -> "${reference}/$filename" }
+    publishDir "${params.outdir}/${params.project}/mhp", mode: 'copy', pattern: '*_mhp_samplesheet.tsv', saveAs: { filename -> "${reference}/chunk${chunk_index}/$filename" }
 
     input:
-    tuple val(sample_id), val(reference), path(vcf), path(aligned_sam_files)
+    tuple val(sample_ids), val(reference), path(vcf), path(aligned_sam_files), val(chunk_index)
 
     output:
-    tuple val(reference), path("${params.project}_${reference}_mhp_samplesheet.tsv"), path(vcf), path(aligned_sam_files), emit: mhp_samplesheet
+    tuple val(reference), val(chunk_index), path("${params.project}_${reference}_chunk${chunk_index}_mhp_samplesheet.tsv"), path(vcf), path(aligned_sam_files), emit: mhp_samplesheet
 
     script:
     """
@@ -17,21 +17,21 @@ process GEN_MHP_SAMPLE_SHEET {
     for sam_file in ${aligned_sam_files}; do
         if [[ "\$sam_file" == *.sam ]]; then
             base_name=\$(basename "\$sam_file" ${reference}_aln.sam)
-            echo -e "\$sam_file\t\$base_name\tNA" >> "${params.project}_${reference}_mhp_samplesheet.tsv"
+            echo -e "\$sam_file\t\$base_name\tNA" >> "${params.project}_${reference}_chunk${chunk_index}_mhp_samplesheet.tsv"
         fi
     done
-    sort -u -o "${params.project}_${reference}_mhp_samplesheet.tsv" "${params.project}_${reference}_mhp_samplesheet.tsv"
+    sort -u -o "${params.project}_${reference}_chunk${chunk_index}_mhp_samplesheet.tsv" "${params.project}_${reference}_chunk${chunk_index}_mhp_samplesheet.tsv"
     """
 }
 
 process PREP_MHP_RDS {
-    tag "Prepare Microhaplotype RDS files: $reference"
+    tag "Prepare Microhaplotype RDS files: $reference chunk $chunk_index"
     label 'process_high'
     container 'docker.io/bnguyen29/r-rubias:1.0.4'
-    publishDir "${params.outdir}/${params.project}/mhp", mode: 'copy', saveAs: { filename -> "${reference}/$filename" }
+    publishDir "${params.outdir}/${params.project}/mhp", mode: 'copy', saveAs: { filename -> "${reference}/chunk${chunk_index}/$filename" }
 
     input:
-    tuple val(reference), path(samplesheet), path(vcf_file), path(sam_files)
+    tuple val(reference), val(chunk_index), path(samplesheet), path(vcf_file), path(sam_files)
 
     output:
     tuple val(reference), path("*.rds"), emit: rds
@@ -39,7 +39,7 @@ process PREP_MHP_RDS {
     script:
     """
     # Needs to take in reference info and output reference info in the RDS file
-    prep_mhp_rds.R ${samplesheet} ${vcf_file} ${params.project} ${task.cpus} ${reference}
+    prep_mhp_rds.R ${samplesheet} ${vcf_file} ${params.project} ${task.cpus} ${reference}_chunk${chunk_index}
     """
 }
 

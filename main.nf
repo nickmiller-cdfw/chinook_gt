@@ -30,7 +30,7 @@ include { GEN_MHP_SAMPLE_SHEET; PREP_MHP_RDS; GEN_HAPS} from './modules/microhap
 include { RUN_RUBIAS } from './modules/rubias.nf'
 include { STRUC_PARAMS; STRUCTURE } from './modules/structure.nf'
 include { STRUCTURE_ROSA_REPORT } from './modules/rosa.nf'
-include { BCFTOOLS_MPILEUP } from './modules/bcftools.nf'
+include { BCFTOOLS_MPILEUP; BCFTOOLS_MERGE } from './modules/bcftools.nf'
 include { GREB_HAPSTR } from './modules/RoSA_hap_str.nf'
 include { CONCAT_READS } from './modules/concat_reads.nf'
 include { RUN_SEQUOIA } from './modules/sequoia.nf'
@@ -528,11 +528,30 @@ if (params.use_sequoia) { // only validated if Sequoia is used
     combined_bam_files = bam_by_ref
         .join(bai_by_ref)
 
+    // Group BAM and BAI files by reference and chunk them
+    combined_bam_files
+        .flatMap { reference, bams, bais ->
+            // Pair each bam with its corresponding bai
+            def paired = [bams, bais].transpose()
+            // Chunk the paired list
+            def chunks = paired.collate(params.mpileup_chunk_size ?: 500)
+            
+            // Return a list of tuples for each chunk
+            def result = []
+            chunks.eachWithIndex { chunk, index ->
+                def chunk_bams = chunk.collect { it[0] }
+                def chunk_bais = chunk.collect { it[1] }
+                result << tuple(reference, chunk_bams, chunk_bais, index)
+            }
+            return result
+        }
+        .set { mpileup_chunks }
+
     // Build mpileup_input - need to match reference files to BAM groups
     // For 'full' panel, we have two reference types: "full" and "Chinook_FullPanel_VGLL3Six6LFARWRAP"
     if (params.panel?.toLowerCase() == 'full') {
         // Split by reference type
-        combined_bam_files
+        mpileup_chunks
             .branch {
                 fullgenome: it[0] == params.fullgenome_ref_name
                 targetfasta: true
@@ -541,43 +560,59 @@ if (params.use_sequoia) { // only validated if Sequoia is used
 
         // Target FASTA BAMs - match to reference_files
         mpileup_targetfasta = bam_branches.targetfasta
-            .map { reference, bams, bais ->
+            .map { reference, bams, bais, index ->
                 def ref_file = reference_files
                     .collect { file(it) }
                     .find { it.simpleName == reference }
                 if (!ref_file) {
                     error "No exact match found for reference: ${reference}"
                 }
-                tuple(reference, bams, bais, ref_file)
+                tuple(reference, bams, bais, ref_file, index)
             }
 
         // Full genome BAMs - use thinned genome
         mpileup_fullgenome = bam_branches.fullgenome
             .combine(ch_thinned_fasta)
-            .map { reference, bams, bais, ref_fasta ->
-                tuple(reference, bams, bais, ref_fasta)
+            .map { reference, bams, bais, index, ref_fasta ->
+                tuple(reference, bams, bais, ref_fasta, index)
             }
 
         // Merge both
         mpileup_input = mpileup_targetfasta.mix(mpileup_fullgenome)
     } else {
         // Transition panel - only target FASTA references
-        mpileup_input = combined_bam_files
-            .map { reference, bams, bais ->
+        mpileup_input = mpileup_chunks
+            .map { reference, bams, bais, index ->
                 def ref_file = reference_files
                     .collect { file(it) }
                     .find { it.simpleName == reference }
                 if (!ref_file) {
                     error "No exact match found for reference: ${reference}. Use 'full' as the reference panel."
                 }
-                tuple(reference, bams, bais, ref_file)
+                tuple(reference, bams, bais, ref_file, index)
             }
     }
 
     BCFTOOLS_MPILEUP(mpileup_input)
 
-    // Filter VCFs for Greb Hapstr (RoSA) - only need the main reference, not full genome
+    // Group MPILEUP outputs by reference to merge them
+    BCFTOOLS_MPILEUP.out.vcf
+        .groupTuple(by: 0)
+        .set { ch_vcfs_to_merge }
+
     BCFTOOLS_MPILEUP.out.filtered_vcf
+        .groupTuple(by: 0)
+        .set { ch_filtered_vcfs_to_merge }
+
+    // Join them so they can be merged together
+    ch_vcfs_to_merge
+        .join(ch_filtered_vcfs_to_merge)
+        .set { ch_merge_input }
+
+    BCFTOOLS_MERGE(ch_merge_input)
+
+    // Filter VCFs for Greb Hapstr (RoSA) - only need the main reference, not full genome
+    BCFTOOLS_MERGE.out.filtered_vcf
         .filter { reference, vcf -> 
              reference != params.fullgenome_ref_name 
         }
@@ -585,33 +620,43 @@ if (params.use_sequoia) { // only validated if Sequoia is used
 
     GREB_HAPSTR(vcf_for_rosa, rosa_allele_key_ch)
 
-    // Group SAM files for microhaplotype analysis
+    // Group SAM files for microhaplotype analysis and chunk them
     ch_aligned_sam
         .groupTuple(by: 1)
-        .map { sample_id, ref_name, sam_files ->
-            // Search for VCF file in data/VCFs directory of projectDir
-            // VCF file should have the same basename as the reference files.
-            def vcfFile = file("${projectDir}/data/VCFs/${ref_name}.vcf")
-            if (!vcfFile.exists()) {
-                error "VCF file not found for reference: ${ref_name}. Place a file named ${ref_name}.vcf in the data/VCFs of project directory."
+        .flatMap { sample_ids, reference, sams ->
+            // Pair each sample_id with its corresponding sam
+            def paired = [sample_ids, sams].transpose()
+            // Chunk the paired list
+            def chunks = paired.collate(params.mhp_chunk_size ?: 500)
+            
+            // Return a list of tuples for each chunk
+            def result = []
+            chunks.eachWithIndex { chunk, index ->
+                def chunk_sample_ids = chunk.collect { it[0] }
+                def chunk_sams = chunk.collect { it[1] }
+                
+                // Get the VCF file for this reference
+                def vcfFile = file("${projectDir}/data/VCFs/${reference}.vcf")
+                if (!vcfFile.exists()) {
+                    error "VCF file not found for reference: ${reference}."
+                }
+                result << tuple(chunk_sample_ids, reference, vcfFile, chunk_sams, index)
             }
-            tuple(sample_id, ref_name, vcfFile, sam_files)
+            return result
         }
-        .set { packed_for_mhp }
+        .set { packed_for_mhp_chunked }
     
-    // Generate samplesheets
-    GEN_MHP_SAMPLE_SHEET(packed_for_mhp)
+    // Generate samplesheets for each chunk
+    GEN_MHP_SAMPLE_SHEET(packed_for_mhp_chunked)
 
-    // Run Microhaplot to generate RDS files
+    // Run Microhaplot to generate RDS files for each chunk
     PREP_MHP_RDS(GEN_MHP_SAMPLE_SHEET.out.mhp_samplesheet)
 
-    // If we have multiple RDS files (e.g. from target and full genome panels), we need to merge them.
-    // Collect all RDS files across all references
+    // Collect all RDS files across all chunks and references
     PREP_MHP_RDS.out.rds
         .map { reference, rds_files -> rds_files }
         .collect()
         .map { all_rds_files -> 
-             // Use a generic reference name for the combined set, or just use the project name
              tuple("combined", all_rds_files) 
         }
         .set { combined_rds }

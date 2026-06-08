@@ -243,6 +243,13 @@ ots28_info <- read_tsv(ots28_info_file) %>%
 unk_match <- unks %>%
   select(any_of(names(ref_baseline))) # Keep only columns (loci) that are in ref_baseline
 
+if (!"collection" %in% colnames(unk_match)) {
+  stop("ERROR: The 'collection' column is missing from the baseline or mixtures. Please check that the correct GSI baseline file (e.g. SWFSC reference baseline) was provided.")
+}
+if (!"indiv" %in% colnames(unk_match)) {
+  stop("ERROR: The 'indiv' column is missing from the baseline or mixtures. Please check the baseline format.")
+}
+
 if (show_missing_data == TRUE) {
   # Add blank/NA data for columns that are in ref_baseline but missing from unk_match
   missing_cols <- setdiff(names(ref_baseline), names(unk_match))
