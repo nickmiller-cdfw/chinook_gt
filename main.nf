@@ -408,8 +408,12 @@ if (params.use_sequoia) { // only validated if Sequoia is used
             // Map merged reads using mounted files
             // Chunk inputs to reduce genome copy overhead
             ch_processed_reads_chunked = ch_processed_reads
-                .buffer(size: params.fullgenome_chunk_size, remainder: true)
-                .map { chunk -> tuple(chunk.collect{it[0]}, chunk.collect{it[1]}) }
+                .toSortedList({ a, b -> a[0] <=> b[0] })
+                .flatMap { sorted_list -> 
+                    sorted_list.collate(params.fullgenome_chunk_size ?: 30).collect { chunk -> 
+                        tuple(chunk.collect{it[0]}, chunk.collect{it[1]}) 
+                    }
+                }
 
             MAP_TO_FULL_GENOME_MOUNT(
                 ch_processed_reads_chunked,
@@ -426,6 +430,7 @@ if (params.use_sequoia) { // only validated if Sequoia is used
                 .mix(MAKE_THINNED_GENOME_MOUNT.out.pac)
                 .mix(MAKE_THINNED_GENOME_MOUNT.out.sa)
                 .collect()
+                .map { it.sort() }
 
         } else {
             // Standard approach: Download and Index
@@ -437,6 +442,7 @@ if (params.use_sequoia) { // only validated if Sequoia is used
                 .mix(DOWNLOAD_AND_INDEX_GENOME.out.pac)
                 .mix(DOWNLOAD_AND_INDEX_GENOME.out.sa)
                 .collect()
+                .map { it.sort() }
 
             // Create thinned genome
             MAKE_THINNED_GENOME(
@@ -449,8 +455,12 @@ if (params.use_sequoia) { // only validated if Sequoia is used
             // Map merged reads
             // Chunk inputs to reduce genome copy overhead
             ch_processed_reads_chunked = ch_processed_reads
-                .buffer(size: params.fullgenome_chunk_size, remainder: true)
-                .map { chunk -> tuple(chunk.collect{it[0]}, chunk.collect{it[1]}) }
+                .toSortedList({ a, b -> a[0] <=> b[0] })
+                .flatMap { sorted_list -> 
+                    sorted_list.collate(params.fullgenome_chunk_size ?: 30).collect { chunk -> 
+                        tuple(chunk.collect{it[0]}, chunk.collect{it[1]}) 
+                    }
+                }
 
             MAP_TO_FULL_GENOME(
                 ch_processed_reads_chunked,
@@ -468,6 +478,7 @@ if (params.use_sequoia) { // only validated if Sequoia is used
                 .mix(MAKE_THINNED_GENOME.out.pac)
                 .mix(MAKE_THINNED_GENOME.out.sa)
                 .collect()
+                .map { it.sort() }
         }
 
 
