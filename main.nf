@@ -424,25 +424,13 @@ if (params.use_sequoia) { // only validated if Sequoia is used
             ch_map_bam = MAP_TO_FULL_GENOME_MOUNT.out.bam.transpose()
 
             // Collect indices from Mount version
-            ch_thinned_indices = MAKE_THINNED_GENOME_MOUNT.out.amb
-                .mix(MAKE_THINNED_GENOME_MOUNT.out.ann)
-                .mix(MAKE_THINNED_GENOME_MOUNT.out.bwt)
-                .mix(MAKE_THINNED_GENOME_MOUNT.out.pac)
-                .mix(MAKE_THINNED_GENOME_MOUNT.out.sa)
-                .collect()
-                .map { it.sort() }
+            ch_thinned_indices = MAKE_THINNED_GENOME_MOUNT.out.indices
 
         } else {
             // Standard approach: Download and Index
             DOWNLOAD_AND_INDEX_GENOME()
             
-            ch_genome_indices = DOWNLOAD_AND_INDEX_GENOME.out.amb
-                .mix(DOWNLOAD_AND_INDEX_GENOME.out.ann)
-                .mix(DOWNLOAD_AND_INDEX_GENOME.out.bwt)
-                .mix(DOWNLOAD_AND_INDEX_GENOME.out.pac)
-                .mix(DOWNLOAD_AND_INDEX_GENOME.out.sa)
-                .collect()
-                .map { it.sort() }
+            ch_genome_indices = DOWNLOAD_AND_INDEX_GENOME.out.indices
 
             // Create thinned genome
             MAKE_THINNED_GENOME(
@@ -472,13 +460,7 @@ if (params.use_sequoia) { // only validated if Sequoia is used
             ch_map_bam = MAP_TO_FULL_GENOME.out.bam.transpose()
             
             // Collect indices from Standard version
-            ch_thinned_indices = MAKE_THINNED_GENOME.out.amb
-                .mix(MAKE_THINNED_GENOME.out.ann)
-                .mix(MAKE_THINNED_GENOME.out.bwt)
-                .mix(MAKE_THINNED_GENOME.out.pac)
-                .mix(MAKE_THINNED_GENOME.out.sa)
-                .collect()
-                .map { it.sort() }
+            ch_thinned_indices = MAKE_THINNED_GENOME.out.indices
         }
 
 

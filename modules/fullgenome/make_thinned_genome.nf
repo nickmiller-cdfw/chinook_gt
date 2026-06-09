@@ -16,11 +16,7 @@ process MAKE_THINNED_GENOME {
     output:
     path "thinned.fna", emit: fasta
     path "thinned.fna.fai", emit: fai
-    path "thinned.fna.amb", emit: amb
-    path "thinned.fna.ann", emit: ann
-    path "thinned.fna.bwt", emit: bwt
-    path "thinned.fna.pac", emit: pac
-    path "thinned.fna.sa", emit: sa
+    path "thinned.fna.{amb,ann,bwt,pac,sa}", emit: indices
 
     script:
     """
@@ -47,11 +43,7 @@ process MAKE_THINNED_GENOME_MOUNT {
     output:
     path "thinned.fna", emit: fasta
     path "thinned.fna.fai", emit: fai
-    path "thinned.fna.amb", emit: amb
-    path "thinned.fna.ann", emit: ann
-    path "thinned.fna.bwt", emit: bwt
-    path "thinned.fna.pac", emit: pac
-    path "thinned.fna.sa", emit: sa
+    path "thinned.fna.{amb,ann,bwt,pac,sa}", emit: indices
 
     script:
     """
