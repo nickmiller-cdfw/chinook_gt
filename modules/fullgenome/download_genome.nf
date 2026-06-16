@@ -10,11 +10,7 @@ process DOWNLOAD_AND_INDEX_GENOME {
     output:
     path "Otsh_v1.0.fna", emit: genome
     path "Otsh_v1.0.fna.fai", emit: fai
-    path "Otsh_v1.0.fna.amb", emit: amb
-    path "Otsh_v1.0.fna.ann", emit: ann
-    path "Otsh_v1.0.fna.bwt", emit: bwt
-    path "Otsh_v1.0.fna.pac", emit: pac
-    path "Otsh_v1.0.fna.sa", emit: sa
+    path "Otsh_v1.0.fna.{amb,ann,bwt,pac,sa}", emit: indices
 
     script:
     """

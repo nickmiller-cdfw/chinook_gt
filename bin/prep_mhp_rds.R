@@ -8,6 +8,12 @@ reference_name <- args[5]
 
 
 # Setup ---------------
+# Workaround for deprecated/defunct tbl_df in newer dplyr versions
+library(dplyr)
+ns <- asNamespace("dplyr")
+unlockBinding("tbl_df", ns)
+assign("tbl_df", tibble::as_tibble, envir = ns)
+lockBinding("tbl_df", ns)
 library(microhaplot)
 
 haplo.read.tbl <- prepHaplotFiles(

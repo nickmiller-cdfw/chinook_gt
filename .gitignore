@@ -11,3 +11,11 @@ output/*
 test/*
 data/genome_cache/*
 .gitignore
+*.sam
+*.smk
+*.html
+*.zip
+*.fastq
+*.fastq.gz
+test_run*
+*.pdf

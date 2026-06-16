@@ -17,6 +17,14 @@ find_missing_samples2 <- function (raw_data, filtered_data)
   missing_samples
 }
 
+clean_sample_name <- function(x) {
+  x %>%
+    str_remove("_$") %>% # Remove trailing underscore
+    str_remove("_S\\d+_?$") %>% # Remove _S123_ suffix
+    str_remove("_R\\d+_?$") %>% # Remove _R123_ suffix
+    str_remove("_L\\d+_?$") # Remove _L123_ suffix
+}
+
 # 1. Find the correct .rds files
 dirFiles <- list.files()
 rds.file <- grep(".rds", dirFiles)
@@ -34,7 +42,7 @@ hap <- map_dfr(dirFiles[rds.files.to.read], function(f) {
   ) %>% 
   dplyr::filter(haplo != "haplo") %>%
   mutate(
-    indiv.ID = str_remove(indiv.ID,"_*$") # Remove any trailing underscores from individual IDs
+    indiv.ID = clean_sample_name(indiv.ID)
   )
 
 unfiltered_output_filename <- paste0(project_name, "_observed_unfiltered_haplotype.csv")
