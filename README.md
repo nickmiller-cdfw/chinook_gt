@@ -55,6 +55,9 @@ The pipeline supports multiple execution profiles configured in the `conf/` dire
   - Auto-scaling compute pools
   - Azure Blob Storage for work and results
 
+- **`azure_large`** - Azure Batch profile optimized for large sample numbers (>1,000 samples)
+  - Increased memory allocations for `GEN_HAPS`, `PREP_MHP_RDS`, `RUN_RUBIAS`, `MULTIQC`, and `ANALYZE_IDXSTATS` to prevent OOM errors
+
 - **`azure_local`** - Azure Batch with local adapter files
   - Similar to `azure` but uses local reference files instead of cloud storage
 
