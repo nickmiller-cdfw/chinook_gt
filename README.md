@@ -112,6 +112,12 @@ To create a custom profile for your environment:
 
 ### Processing Options
 
+- **`run_fastqc`** (boolean, default: `false`)
+  Run FastQC quality control analysis on raw FASTQ files. Set to `true` to enable FastQC.
+
+- **`run_dimer_check`** (boolean, default: `true`)
+  Run primer dimer analysis (`DIMER_ANALYSIS` module). Set to `false` to disable.
+
 - **`concat_all_reads`** (boolean, default: `false`)
   Concatenate all available reads per sample (merged, unmerged, and unpaired) for BWA mapping. If false, uses only merged and single-end reads.
 

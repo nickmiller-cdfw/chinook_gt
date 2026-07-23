@@ -175,6 +175,8 @@ if (params.use_sequoia) { // only validated if Sequoia is used
     Female Sex ID Threshold : ${params.female_sexid_threshold}
     Sex ID Min Reads        : ${params.sexid_min_reads}
     Other parameters:
+    Run FastQC              : ${params.run_fastqc}
+    Run Dimer Check         : ${params.run_dimer_check}
     Concatenate All Reads   : ${params.concat_all_reads}
     Sequoia Parameters:
     Use Sequoia             : ${params.use_sequoia}
@@ -297,11 +299,14 @@ if (params.use_sequoia) { // only validated if Sequoia is used
             .set { ch_input_reads }
     }
         
-    ch_input_fastq = Channel
-        .fromPath(params.input, checkIfExists: true)
-        .collect()
+    if (params.run_fastqc) {
+        ch_input_fastq = Channel
+            .fromPath(params.input, checkIfExists: true)
+            .collect()
+        FASTQC(ch_input_fastq) // FASTQC all input files
+    }
 
-        // Branch workflow based on read type
+    // Branch workflow based on read type
     ch_input_reads
         .branch {
             paired: it[1] == 'paired'
@@ -314,17 +319,18 @@ if (params.use_sequoia) { // only validated if Sequoia is used
         .combine(adapters_ch)
         .set { ch_paired_adapters }
 
+    if (params.run_dimer_check) {
+        DIMER_ANALYSIS(ch_reads_branched.paired, params.min_overlap, params.min_outie_overlap, params.max_overlap)
 
-    
-    FASTQC(ch_input_fastq) // FASTQC all input files
-    DIMER_ANALYSIS(ch_reads_branched.paired, params.min_overlap, params.min_outie_overlap, params.max_overlap)
-
-    merged_counts = DIMER_ANALYSIS.out.counts
-        .collectFile(
-            name: 'dimer_counts_mqc.tsv',
-            keepHeader: true,
-            storeDir: "${params.outdir}/${params.project}/dimers/summary"
-        )
+        merged_counts = DIMER_ANALYSIS.out.counts
+            .collectFile(
+                name: 'dimer_counts_mqc.tsv',
+                keepHeader: true,
+                storeDir: "${params.outdir}/${params.project}/dimers/summary"
+            )
+    } else {
+        merged_counts = Channel.empty()
+    }
 
     TRIMMOMATIC(ch_paired_adapters, params.trim_params)
     FLASH2(TRIMMOMATIC.out.trimmed_paired, params.min_overlap, params.min_outie_overlap, params.max_overlap)
@@ -659,12 +665,16 @@ if (params.use_sequoia) { // only validated if Sequoia is used
 
     // Collect all QC files
     ch_multiqc_files = Channel.empty()
-    ch_multiqc_files = ch_multiqc_files.mix(FASTQC.out.fastqc_results)
+    if (params.run_fastqc) {
+        ch_multiqc_files = ch_multiqc_files.mix(FASTQC.out.fastqc_results)
+    }
     ch_multiqc_files = ch_multiqc_files.mix(TRIMMOMATIC.out.log)
     ch_multiqc_files = ch_multiqc_files.mix(FLASH2.out.log)
     //ch_multiqc_files = ch_multiqc_files.mix(BWA_MEM.out.log)
     ch_multiqc_files = ch_multiqc_files.mix(SAMTOOLS.out.idxstats.collect{it[2]})
-    ch_multiqc_files = ch_multiqc_files.mix(merged_counts)
+    if (params.run_dimer_check) {
+        ch_multiqc_files = ch_multiqc_files.mix(merged_counts)
+    }
     //ch_multiqc_files.view { println "Debug: MultiQC input file: $it" }
     MULTIQC(ch_multiqc_files.collect())
     
