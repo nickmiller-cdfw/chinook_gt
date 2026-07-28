@@ -510,36 +510,22 @@ if (params.use_sequoia) { // only validated if Sequoia is used
     // Run the analysis
     ANALYZE_IDXSTATS(idxstats_main)
 
-    // Group BAM and BAI files by reference
-    bam_by_ref = SAMTOOLS.out.sorted_bam
-        .map { sample_id, reference, bam -> 
-            tuple(reference, bam) 
+    // Join sorted BAM and BAI by [sample_id, reference] to guarantee correct pairing
+    SAMTOOLS.out.sorted_bam
+        .join(SAMTOOLS.out.sorted_bam_index, by: [0, 1])
+        .map { sample_id, reference, bam, bai -> 
+            tuple(reference, sample_id, bam, bai) 
         }
         .groupTuple(by: 0)
-
-    bai_by_ref = SAMTOOLS.out.sorted_bam_index
-        .map { sample_id, reference, bai -> 
-            tuple(reference, bai) 
-        }
-        .groupTuple(by: 0)
-
-    // Join BAM and BAI groups by reference
-    combined_bam_files = bam_by_ref
-        .join(bai_by_ref)
-
-    // Group BAM and BAI files by reference and chunk them
-    combined_bam_files
-        .flatMap { reference, bams, bais ->
-            // Pair each bam with its corresponding bai
-            def paired = [bams, bais].transpose()
-            // Chunk the paired list
+        .flatMap { reference, sample_ids, bams, bais ->
+            // Zip sample attributes and sort deterministically by sample_id to prevent cache invalidation on resume
+            def paired = [sample_ids, bams, bais].transpose().sort { a, b -> a[0] <=> b[0] }
             def chunks = paired.collate(params.mpileup_chunk_size ?: 500)
             
-            // Return a list of tuples for each chunk
             def result = []
             chunks.eachWithIndex { chunk, index ->
-                def chunk_bams = chunk.collect { it[0] }
-                def chunk_bais = chunk.collect { it[1] }
+                def chunk_bams = chunk.collect { it[1] }
+                def chunk_bais = chunk.collect { it[2] }
                 result << tuple(reference, chunk_bams, chunk_bais, index)
             }
             return result
@@ -594,13 +580,21 @@ if (params.use_sequoia) { // only validated if Sequoia is used
 
     BCFTOOLS_MPILEUP(mpileup_input)
 
-    // Group MPILEUP outputs by reference to merge them
+    // Group MPILEUP outputs by reference and sort deterministically by filename before merging
     BCFTOOLS_MPILEUP.out.vcf
         .groupTuple(by: 0)
+        .map { reference, vcfs, csis ->
+            def sorted = [vcfs, csis].transpose().sort { a, b -> a[0].name <=> b[0].name }
+            tuple(reference, sorted.collect { it[0] }, sorted.collect { it[1] })
+        }
         .set { ch_vcfs_to_merge }
 
     BCFTOOLS_MPILEUP.out.filtered_vcf
         .groupTuple(by: 0)
+        .map { reference, vcfs, csis ->
+            def sorted = [vcfs, csis].transpose().sort { a, b -> a[0].name <=> b[0].name }
+            tuple(reference, sorted.collect { it[0] }, sorted.collect { it[1] })
+        }
         .set { ch_filtered_vcfs_to_merge }
 
     // Join them so they can be merged together
@@ -623,8 +617,8 @@ if (params.use_sequoia) { // only validated if Sequoia is used
     ch_aligned_sam
         .groupTuple(by: 1)
         .flatMap { sample_ids, reference, sams ->
-            // Pair each sample_id with its corresponding sam
-            def paired = [sample_ids, sams].transpose()
+            // Pair each sample_id with its corresponding sam and sort deterministically
+            def paired = [sample_ids, sams].transpose().sort { a, b -> a[0] <=> b[0] }
             // Chunk the paired list
             def chunks = paired.collate(params.mhp_chunk_size ?: 500)
             
@@ -651,12 +645,12 @@ if (params.use_sequoia) { // only validated if Sequoia is used
     // Run Microhaplot to generate RDS files for each chunk
     PREP_MHP_RDS(GEN_MHP_SAMPLE_SHEET.out.mhp_samplesheet)
 
-    // Collect all RDS files across all chunks and references
+    // Collect all RDS files across all chunks and references, sorting deterministically
     PREP_MHP_RDS.out.rds
         .map { reference, rds_files -> rds_files }
         .collect()
         .map { all_rds_files -> 
-             tuple("combined", all_rds_files) 
+             tuple("combined", all_rds_files.flatten().sort { a, b -> a.name <=> b.name }) 
         }
         .set { combined_rds }
 
