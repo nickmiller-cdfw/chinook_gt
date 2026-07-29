@@ -23,7 +23,7 @@ include { MULTIQC } from './modules/multiqc'
 workflow {
     ch_multiqc_files = Channel.empty()
 
-    if (params.run_fastqc != false) {
+    if (params.run_fastqc) {
         ch_input_fastq = Channel // all fastq files for FastQC
             .fromPath(params.input, checkIfExists: true)
             .collect()
