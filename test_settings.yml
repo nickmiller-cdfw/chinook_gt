@@ -18,7 +18,9 @@ n_loci: 204
 rubias_show_missing_data: "TRUE"
 
 concat_all_reads: false
-use_CKMR: TRUE
+run_fastqc: false
+run_dimer_check: true
+use_CKMR: FALSE
 CKMR_logl_threshold: 6.9
 CKMR_min_loci: 90
 CKMR_parent_geno_input: "examples/PBT/FRH2024_reference_genotypes.csv"

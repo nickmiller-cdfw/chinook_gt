@@ -66,6 +66,16 @@
             "type": "object",
             "description": "Options for read processing and data handling.",
             "properties": {
+                "run_fastqc": {
+                    "type": "boolean",
+                    "description": "Run FastQC quality control analysis on raw FASTQ files.",
+                    "default": false
+                },
+                "run_dimer_check": {
+                    "type": "boolean",
+                    "description": "Run primer dimer analysis (DIMER_ANALYSIS module).",
+                    "default": true
+                },
                 "concat_all_reads": {
                     "type": "boolean",
                     "description": "Concatenate all available reads per sample (merged, unmerged, and unpaired) for BWA mapping. If false, uses only merged and single-end reads (original behavior).",

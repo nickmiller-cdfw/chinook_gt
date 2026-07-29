@@ -55,6 +55,9 @@ The pipeline supports multiple execution profiles configured in the `conf/` dire
   - Auto-scaling compute pools
   - Azure Blob Storage for work and results
 
+- **`azure_large`** - Azure Batch profile optimized for large sample numbers (>1,000 samples)
+  - Increased memory allocations for `GEN_HAPS`, `PREP_MHP_RDS`, `RUN_RUBIAS`, `MULTIQC`, and `ANALYZE_IDXSTATS` to prevent OOM errors
+
 - **`azure_local`** - Azure Batch with local adapter files
   - Similar to `azure` but uses local reference files instead of cloud storage
 
@@ -111,6 +114,12 @@ To create a custom profile for your environment:
   Maximum overlap length for read merging.
 
 ### Processing Options
+
+- **`run_fastqc`** (boolean, default: `false`)
+  Run FastQC quality control analysis on raw FASTQ files. Set to `true` to enable FastQC.
+
+- **`run_dimer_check`** (boolean, default: `true`)
+  Run primer dimer analysis (`DIMER_ANALYSIS` module). Set to `false` to disable.
 
 - **`concat_all_reads`** (boolean, default: `false`)
   Concatenate all available reads per sample (merged, unmerged, and unpaired) for BWA mapping. If false, uses only merged and single-end reads.

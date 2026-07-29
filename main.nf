@@ -175,6 +175,8 @@ if (params.use_sequoia) { // only validated if Sequoia is used
     Female Sex ID Threshold : ${params.female_sexid_threshold}
     Sex ID Min Reads        : ${params.sexid_min_reads}
     Other parameters:
+    Run FastQC              : ${params.run_fastqc}
+    Run Dimer Check         : ${params.run_dimer_check}
     Concatenate All Reads   : ${params.concat_all_reads}
     Sequoia Parameters:
     Use Sequoia             : ${params.use_sequoia}
@@ -297,11 +299,14 @@ if (params.use_sequoia) { // only validated if Sequoia is used
             .set { ch_input_reads }
     }
         
-    ch_input_fastq = Channel
-        .fromPath(params.input, checkIfExists: true)
-        .collect()
+    if (params.run_fastqc) {
+        ch_input_fastq = Channel
+            .fromPath(params.input, checkIfExists: true)
+            .collect()
+        FASTQC(ch_input_fastq) // FASTQC all input files
+    }
 
-        // Branch workflow based on read type
+    // Branch workflow based on read type
     ch_input_reads
         .branch {
             paired: it[1] == 'paired'
@@ -314,17 +319,18 @@ if (params.use_sequoia) { // only validated if Sequoia is used
         .combine(adapters_ch)
         .set { ch_paired_adapters }
 
+    if (params.run_dimer_check) {
+        DIMER_ANALYSIS(ch_reads_branched.paired, params.min_overlap, params.min_outie_overlap, params.max_overlap)
 
-    
-    FASTQC(ch_input_fastq) // FASTQC all input files
-    DIMER_ANALYSIS(ch_reads_branched.paired, params.min_overlap, params.min_outie_overlap, params.max_overlap)
-
-    merged_counts = DIMER_ANALYSIS.out.counts
-        .collectFile(
-            name: 'dimer_counts_mqc.tsv',
-            keepHeader: true,
-            storeDir: "${params.outdir}/${params.project}/dimers/summary"
-        )
+        merged_counts = DIMER_ANALYSIS.out.counts
+            .collectFile(
+                name: 'dimer_counts_mqc.tsv',
+                keepHeader: true,
+                storeDir: "${params.outdir}/${params.project}/dimers/summary"
+            )
+    } else {
+        merged_counts = Channel.empty()
+    }
 
     TRIMMOMATIC(ch_paired_adapters, params.trim_params)
     FLASH2(TRIMMOMATIC.out.trimmed_paired, params.min_overlap, params.min_outie_overlap, params.max_overlap)
@@ -504,36 +510,22 @@ if (params.use_sequoia) { // only validated if Sequoia is used
     // Run the analysis
     ANALYZE_IDXSTATS(idxstats_main)
 
-    // Group BAM and BAI files by reference
-    bam_by_ref = SAMTOOLS.out.sorted_bam
-        .map { sample_id, reference, bam -> 
-            tuple(reference, bam) 
+    // Join sorted BAM and BAI by [sample_id, reference] to guarantee correct pairing
+    SAMTOOLS.out.sorted_bam
+        .join(SAMTOOLS.out.sorted_bam_index, by: [0, 1])
+        .map { sample_id, reference, bam, bai -> 
+            tuple(reference, sample_id, bam, bai) 
         }
         .groupTuple(by: 0)
-
-    bai_by_ref = SAMTOOLS.out.sorted_bam_index
-        .map { sample_id, reference, bai -> 
-            tuple(reference, bai) 
-        }
-        .groupTuple(by: 0)
-
-    // Join BAM and BAI groups by reference
-    combined_bam_files = bam_by_ref
-        .join(bai_by_ref)
-
-    // Group BAM and BAI files by reference and chunk them
-    combined_bam_files
-        .flatMap { reference, bams, bais ->
-            // Pair each bam with its corresponding bai
-            def paired = [bams, bais].transpose()
-            // Chunk the paired list
+        .flatMap { reference, sample_ids, bams, bais ->
+            // Zip sample attributes and sort deterministically by sample_id to prevent cache invalidation on resume
+            def paired = [sample_ids, bams, bais].transpose().sort { a, b -> a[0] <=> b[0] }
             def chunks = paired.collate(params.mpileup_chunk_size ?: 500)
             
-            // Return a list of tuples for each chunk
             def result = []
             chunks.eachWithIndex { chunk, index ->
-                def chunk_bams = chunk.collect { it[0] }
-                def chunk_bais = chunk.collect { it[1] }
+                def chunk_bams = chunk.collect { it[1] }
+                def chunk_bais = chunk.collect { it[2] }
                 result << tuple(reference, chunk_bams, chunk_bais, index)
             }
             return result
@@ -588,13 +580,21 @@ if (params.use_sequoia) { // only validated if Sequoia is used
 
     BCFTOOLS_MPILEUP(mpileup_input)
 
-    // Group MPILEUP outputs by reference to merge them
+    // Group MPILEUP outputs by reference and sort deterministically by filename before merging
     BCFTOOLS_MPILEUP.out.vcf
         .groupTuple(by: 0)
+        .map { reference, vcfs, csis ->
+            def sorted = [vcfs, csis].transpose().sort { a, b -> a[0].name <=> b[0].name }
+            tuple(reference, sorted.collect { it[0] }, sorted.collect { it[1] })
+        }
         .set { ch_vcfs_to_merge }
 
     BCFTOOLS_MPILEUP.out.filtered_vcf
         .groupTuple(by: 0)
+        .map { reference, vcfs, csis ->
+            def sorted = [vcfs, csis].transpose().sort { a, b -> a[0].name <=> b[0].name }
+            tuple(reference, sorted.collect { it[0] }, sorted.collect { it[1] })
+        }
         .set { ch_filtered_vcfs_to_merge }
 
     // Join them so they can be merged together
@@ -617,8 +617,8 @@ if (params.use_sequoia) { // only validated if Sequoia is used
     ch_aligned_sam
         .groupTuple(by: 1)
         .flatMap { sample_ids, reference, sams ->
-            // Pair each sample_id with its corresponding sam
-            def paired = [sample_ids, sams].transpose()
+            // Pair each sample_id with its corresponding sam and sort deterministically
+            def paired = [sample_ids, sams].transpose().sort { a, b -> a[0] <=> b[0] }
             // Chunk the paired list
             def chunks = paired.collate(params.mhp_chunk_size ?: 500)
             
@@ -645,12 +645,12 @@ if (params.use_sequoia) { // only validated if Sequoia is used
     // Run Microhaplot to generate RDS files for each chunk
     PREP_MHP_RDS(GEN_MHP_SAMPLE_SHEET.out.mhp_samplesheet)
 
-    // Collect all RDS files across all chunks and references
+    // Collect all RDS files across all chunks and references, sorting deterministically
     PREP_MHP_RDS.out.rds
         .map { reference, rds_files -> rds_files }
         .collect()
         .map { all_rds_files -> 
-             tuple("combined", all_rds_files) 
+             tuple("combined", all_rds_files.flatten().sort { a, b -> a.name <=> b.name }) 
         }
         .set { combined_rds }
 
@@ -659,12 +659,16 @@ if (params.use_sequoia) { // only validated if Sequoia is used
 
     // Collect all QC files
     ch_multiqc_files = Channel.empty()
-    ch_multiqc_files = ch_multiqc_files.mix(FASTQC.out.fastqc_results)
+    if (params.run_fastqc) {
+        ch_multiqc_files = ch_multiqc_files.mix(FASTQC.out.fastqc_results)
+    }
     ch_multiqc_files = ch_multiqc_files.mix(TRIMMOMATIC.out.log)
     ch_multiqc_files = ch_multiqc_files.mix(FLASH2.out.log)
     //ch_multiqc_files = ch_multiqc_files.mix(BWA_MEM.out.log)
     ch_multiqc_files = ch_multiqc_files.mix(SAMTOOLS.out.idxstats.collect{it[2]})
-    ch_multiqc_files = ch_multiqc_files.mix(merged_counts)
+    if (params.run_dimer_check) {
+        ch_multiqc_files = ch_multiqc_files.mix(merged_counts)
+    }
     //ch_multiqc_files.view { println "Debug: MultiQC input file: $it" }
     MULTIQC(ch_multiqc_files.collect())
     
