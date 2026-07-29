@@ -64,10 +64,6 @@ The pipeline supports multiple execution profiles configured in the `conf/` dire
 - **`docker`** - Local execution with Docker containers
   - For running on local machines or servers with Docker installed
 
-- **`singularity`** - Singularity containers for HPC systems
-  - Compatible with SLURM and other HPC schedulers
-  - No root privileges required
-
 - **`ucdavis_hive`** - Pre-configured profile for UC Davis Hive HPC
   - Uses SLURM executor with Singularity
   - Optimized for the UC Davis Hive cluster environment
