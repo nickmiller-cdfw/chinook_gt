@@ -129,8 +129,8 @@ update_index <- function(index, haplotypes){
   new_calls <- distinct_calls[!(paste(distinct_calls$locus, 
                                       distinct_calls$allele, 
                                       sep = "_") %in% 
-                                  paste(idx$clean$locus, 
-                                        idx$clean$allele, 
+                                  paste(index$clean$locus, 
+                                        index$clean$allele, 
                                         sep = "_")),]
   #
   # If no new haplotypes, nothing to do
